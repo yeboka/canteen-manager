@@ -1,6 +1,8 @@
 package sqlstore
 
-import "github.com/yeboka/final-project/internal/app/model"
+import (
+	"github.com/yeboka/final-project/internal/app/model"
+)
 
 // UserRepository ...
 type UserRepository struct {
