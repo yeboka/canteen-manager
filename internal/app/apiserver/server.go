@@ -123,9 +123,6 @@ func (s *server) authenticateUser(next http.Handler) http.Handler {
 }
 
 func (s *server) handleWhoAmI() http.HandlerFunc {
-	type requests struct {
-	}
-
 	return func(writer http.ResponseWriter, request *http.Request) {
 		s.respond(writer, request, http.StatusOK, request.Context().Value(ctxKeyUser).(*model.User))
 	}
@@ -135,6 +132,7 @@ func (s *server) handleUsersCreate() http.HandlerFunc {
 	type requests struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
+		Username string `json:"username"`
 	}
 
 	return func(writer http.ResponseWriter, request *http.Request) {
@@ -147,6 +145,8 @@ func (s *server) handleUsersCreate() http.HandlerFunc {
 		u := &model.User{
 			Email:    req.Email,
 			Password: req.Password,
+			Username: req.Username,
+			Role:     "user",
 		}
 
 		if err := s.store.User().Create(u); err != nil {

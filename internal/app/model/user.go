@@ -10,6 +10,8 @@ import (
 type User struct {
 	ID                int    `json:"id"`
 	Email             string `json:"email"`
+	Username          string `json:"username"`
+	Role              string `json:"role"`
 	Password          string `json:"password,omitempty"`
 	EncryptedPassword string `json:"-"`
 }
@@ -19,6 +21,8 @@ func (u *User) Validate() error {
 	return validation.ValidateStruct(
 		u,
 		validation.Field(&u.Email, validation.Required, is.Email),
+		validation.Field(&u.Username, validation.NilOrNotEmpty, validation.Length(1, 32)),
+		validation.Field(&u.Role, validation.In("user", "admin")),
 		validation.Field(&u.Password, validation.By(requiredIf(u.EncryptedPassword == "")), validation.Length(6, 32)),
 	)
 }

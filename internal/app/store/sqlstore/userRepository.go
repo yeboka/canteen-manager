@@ -20,9 +20,11 @@ func (r *UserRepository) Create(u *model.User) error {
 	}
 
 	return r.store.db.QueryRow(
-		"INSERT INTO users (email, encrypted_password) VALUES ($1, $2) RETURNING id",
+		"INSERT INTO users (email, encrypted_password, username, role) VALUES ($1, $2, $3, $4) RETURNING id",
 		u.Email,
 		u.EncryptedPassword,
+		u.Username,
+		u.Role,
 	).Scan(&u.ID)
 }
 
@@ -31,12 +33,14 @@ func (r *UserRepository) Find(id int) (*model.User, error) {
 	u := &model.User{}
 
 	if err := r.store.db.QueryRow(
-		"SELECT id, email, encrypted_password FROM users WHERE id = $1",
+		"SELECT id, username, email, role, encrypted_password FROM users WHERE id = $1",
 		id,
 	).Scan(
 		&u.ID,
 		&u.Email,
 		&u.EncryptedPassword,
+		&u.Username,
+		&u.Role,
 	); err != nil {
 		return nil, err
 	}
