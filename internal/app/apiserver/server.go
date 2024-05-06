@@ -24,6 +24,7 @@ const (
 var (
 	errIncorrectEmailOrPassword = errors.New("incorrect email or password")
 	errNotAuthenticated         = errors.New("not authenticated")
+	errCycleDependency          = errors.New("found cycle dependency")
 )
 
 type ctxKey int8
@@ -64,6 +65,8 @@ func (s *server) configureRouter() {
 	private := s.router.PathPrefix("/private").Subrouter()
 	private.Use(s.authenticateUser)
 	private.HandleFunc("/whoami", s.handleWhoAmI()).Methods("GET")
+	private.HandleFunc("/category", s.handleCategoryCreate()).Methods("POST")
+	private.HandleFunc("/menu-item", s.handleMenuItemCreate()).Methods("POST")
 }
 
 func (s *server) setRequestId(next http.Handler) http.Handler {
@@ -120,6 +123,70 @@ func (s *server) authenticateUser(next http.Handler) http.Handler {
 			next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), ctxKeyUser, u)))
 		},
 	)
+}
+
+func (s *server) handleMenuItemCreate() http.HandlerFunc {
+	type requests struct {
+		Name        string `json:"name"`
+		CategoryId  int    `json:"categoryId"`
+		Price       int    `json:"price"`
+		Description string `json:"description"`
+	}
+
+	return func(writer http.ResponseWriter, request *http.Request) {
+		req := &requests{}
+		if err := json.NewDecoder(request.Body).Decode(req); err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		mi := &model.MenuItem{
+			Name:        req.Name,
+			CategoryID:  req.CategoryId,
+			Price:       req.Price,
+			Description: req.Description,
+		}
+
+		if err := s.store.MenuItem().Create(mi); err != nil {
+			s.error(writer, request, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		s.respond(writer, request, http.StatusCreated, mi)
+	}
+}
+
+func (s *server) handleCategoryCreate() http.HandlerFunc {
+	type requests struct {
+		Name     string `json:"name"`
+		ParentId int    `json:"parentId"`
+	}
+
+	return func(writer http.ResponseWriter, request *http.Request) {
+		req := &requests{}
+		if err := json.NewDecoder(request.Body).Decode(req); err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		ctg := &model.Category{
+			Name:     req.Name,
+			ParentID: req.ParentId,
+		}
+
+		_, err := s.store.Category().Find(req.ParentId)
+		if err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		if err := s.store.Category().Create(ctg); err != nil {
+			s.error(writer, request, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		s.respond(writer, request, http.StatusCreated, ctg)
+	}
 }
 
 func (s *server) handleWhoAmI() http.HandlerFunc {

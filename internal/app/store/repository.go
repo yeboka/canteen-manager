@@ -10,3 +10,13 @@ type UserRepository interface {
 	Find(int) (*model.User, error)
 	FindByEmail(string) (*model.User, error)
 }
+
+type CategoryRepository interface {
+	Create(category *model.Category) error
+	Find(id int) (*model.Category, error)
+}
+
+type MenuItemRepository interface {
+	Create(menuItem *model.MenuItem) error
+	//FindByName(id int) (*model.MenuItem, error)
+}
