@@ -13,7 +13,6 @@ func Start(config *Config) error {
 	if err != nil {
 		return err
 	}
-
 	defer db.Close()
 	store := sqlstore.New(db)
 	sessionsStore := sessions.NewCookieStore([]byte(config.SessionKey))
