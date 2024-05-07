@@ -25,6 +25,7 @@ const (
 var (
 	errIncorrectEmailOrPassword = errors.New("incorrect email or password")
 	errNotAuthenticated         = errors.New("not authenticated")
+	errCycleDependency          = errors.New("found cycle dependency")
 )
 
 type ctxKey int8
@@ -61,10 +62,15 @@ func (s *server) configureRouter() {
 
 	s.router.HandleFunc("/users", s.handleUsersCreate()).Methods("POST")
 	s.router.HandleFunc("/sessions", s.handleSessionsCreate()).Methods("POST")
+	s.router.HandleFunc("/orders", s.createOrder()).Methods("POST")
 
 	private := s.router.PathPrefix("/private").Subrouter()
 	private.Use(s.authenticateUser)
+	private.HandleFunc("/orders/{id}", s.deleteOrder()).Methods("DELETE")
 	private.HandleFunc("/whoami", s.handleWhoAmI()).Methods("GET")
+	private.HandleFunc("/category", s.handleCategoryCreate()).Methods("POST")
+	private.HandleFunc("/category", s.handleCategoriesGet()).Methods("GET")
+	private.HandleFunc("/menu-item", s.handleMenuItemCreate()).Methods("POST")
 	private.HandleFunc("/users/{id}", s.handleUserUpdate()).Methods("PATCH")
 
 	admin := s.router.PathPrefix("/admin").Subrouter()
@@ -233,9 +239,168 @@ func (s *server) handleUserUpdate() http.HandlerFunc {
 	}
 }
 
+type CategoryTree struct {
+	ID        int               `json:"id"`
+	Name      string            `json:"name"`
+	MenuItems []*model.MenuItem `json:"menu_items"`
+	Children  []*CategoryTree   `json:"children,omitempty"`
+}
+
+func (s *server) handleCategoriesGet() http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+
+		categories, err := s.store.Category().GetAllCategories()
+		if err != nil {
+			s.error(writer, request, http.StatusInternalServerError, err)
+			return
+		}
+
+		categoryMap := make(map[int]*CategoryTree)
+		var roots []*CategoryTree
+
+		for _, category := range categories {
+			items, err := s.store.MenuItem().FindByCategoryId(category.ID)
+			if err != nil {
+				s.error(writer, request, http.StatusInternalServerError, err)
+				return
+			}
+			categoryMap[category.ID] = &CategoryTree{
+				ID:        category.ID,
+				Name:      category.Name,
+				MenuItems: items,
+			}
+		}
+
+		for _, category := range categories {
+			if category.ParentID == 0 {
+				roots = append(roots, categoryMap[category.ID])
+			} else {
+				parent := categoryMap[category.ParentID]
+				if parent != nil {
+					parent.Children = append(parent.Children, categoryMap[category.ID])
+				}
+			}
+		}
+
+		s.respond(writer, request, http.StatusCreated, roots)
+	}
+}
+
+func (s *server) handleMenuItemCreate() http.HandlerFunc {
+	type requests struct {
+		Name        string `json:"name"`
+		CategoryId  int    `json:"categoryId"`
+		Price       int    `json:"price"`
+		Description string `json:"description"`
+	}
+
+	return func(writer http.ResponseWriter, request *http.Request) {
+		req := &requests{}
+		if err := json.NewDecoder(request.Body).Decode(req); err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		mi := &model.MenuItem{
+			Name:        req.Name,
+			CategoryID:  req.CategoryId,
+			Price:       req.Price,
+			Description: req.Description,
+		}
+
+		if err := s.store.MenuItem().Create(mi); err != nil {
+			s.error(writer, request, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		s.respond(writer, request, http.StatusCreated, mi)
+	}
+}
+
+func (s *server) handleCategoryCreate() http.HandlerFunc {
+	type requests struct {
+		Name     string `json:"name"`
+		ParentId int    `json:"parentId"`
+	}
+
+	return func(writer http.ResponseWriter, request *http.Request) {
+		req := &requests{}
+		if err := json.NewDecoder(request.Body).Decode(req); err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		ctg := &model.Category{
+			Name:     req.Name,
+			ParentID: req.ParentId,
+		}
+
+		_, err := s.store.Category().Find(req.ParentId)
+		if err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		if err := s.store.Category().Create(ctg); err != nil {
+			s.error(writer, request, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		s.respond(writer, request, http.StatusCreated, ctg)
+	}
+}
+
 func (s *server) handleWhoAmI() http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		s.respond(writer, request, http.StatusOK, request.Context().Value(ctxKeyUser).(*model.User))
+	}
+}
+
+func (s *server) createOrder() http.HandlerFunc {
+	type requests struct {
+		UserId      int `json:"user_id"`
+		TotalAmount int `json:"totalAmount"`
+	}
+
+	return func(writer http.ResponseWriter, request *http.Request) {
+		req := &requests{}
+		if err := json.NewDecoder(request.Body).Decode(req); err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		o := &model.Order{
+			UserId:      req.UserId,
+			TotalAmount: req.TotalAmount,
+		}
+
+		if err := s.store.Order().Create(o); err != nil {
+			s.error(writer, request, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		s.respond(writer, request, http.StatusCreated, o)
+	}
+}
+
+func (s *server) deleteOrder() http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		vars := mux.Vars(request)
+		orderId := vars["id"]
+
+		id, err := strconv.Atoi(orderId)
+		if err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		res, err := s.store.Order().Delete(id)
+		if err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		s.respond(writer, request, http.StatusOK, res)
 	}
 }
 
