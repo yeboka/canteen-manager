@@ -246,37 +246,6 @@ func (s *server) handleWhoAmI() http.HandlerFunc {
 	}
 }
 
-func (s *server) handleUsersCreate() http.HandlerFunc {
-	type requests struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-		Username string `json:"username"`
-	}
-
-	return func(writer http.ResponseWriter, request *http.Request) {
-		req := &requests{}
-		if err := json.NewDecoder(request.Body).Decode(req); err != nil {
-			s.error(writer, request, http.StatusBadRequest, err)
-			return
-		}
-
-		u := &model.User{
-			Email:    req.Email,
-			Password: req.Password,
-			Username: req.Username,
-			Role:     "user",
-		}
-
-		if err := s.store.User().Create(u); err != nil {
-			s.error(writer, request, http.StatusUnprocessableEntity, err)
-			return
-		}
-
-		u.Sanitize()
-		s.respond(writer, request, http.StatusCreated, u)
-	}
-}
-
 func (s *server) createOrder() http.HandlerFunc {
 	type requests struct {
 		UserId      int `json:"user_id"`
@@ -322,6 +291,37 @@ func (s *server) deleteOrder() http.HandlerFunc {
 		}
 
 		s.respond(writer, request, http.StatusOK, res)
+	}
+}
+
+func (s *server) handleUsersCreate() http.HandlerFunc {
+	type requests struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+		Username string `json:"username"`
+	}
+
+	return func(writer http.ResponseWriter, request *http.Request) {
+		req := &requests{}
+		if err := json.NewDecoder(request.Body).Decode(req); err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		u := &model.User{
+			Email:    req.Email,
+			Password: req.Password,
+			Username: req.Username,
+			Role:     "user",
+		}
+
+		if err := s.store.User().Create(u); err != nil {
+			s.error(writer, request, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		u.Sanitize()
+		s.respond(writer, request, http.StatusCreated, u)
 	}
 }
 
