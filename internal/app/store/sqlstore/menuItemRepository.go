@@ -47,21 +47,22 @@ func (r *MenuItemRepository) FindByCategoryId(categoryId int) ([]*model.MenuItem
 	return menuItems, nil
 }
 
-//func (r *MenuItemRepository) Find(id int) (*model.MenuItem, error) {
-//	m := &model.MenuItem{}
-//
-//	if err := r.store.db.QueryRow(
-//		"SELECT id, name, category_id, price, description FROM menuitem WHERE id = $1",
-//		id,
-//	).Scan(
-//		&m.ID,
-//		&m.Name,
-//		&m.CategoryID,
-//		&m.Price,
-//		&m.Description,
-//	); err != nil {
-//		return nil, err
-//	}
-//
-//	return m, nil
-//}
+func (r *MenuItemRepository) Update(mi *model.MenuItem) error {
+	_, err := r.store.db.Query(
+		"UPDATE menuitem SET name = $1, price = $2, description = $3 WHERE id = $4",
+		mi.Name, mi.Price, mi.Description, mi.ID,
+	)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *MenuItemRepository) Delete(id int) error {
+	_, err := r.store.db.Exec("DELETE FROM menuitem WHERE id = $1", id)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

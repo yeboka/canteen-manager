@@ -29,4 +29,6 @@ type CategoryRepository interface {
 type MenuItemRepository interface {
 	Create(menuItem *model.MenuItem) error
 	FindByCategoryId(categoryId int) ([]*model.MenuItem, error)
+	Update(mi *model.MenuItem) error
+	Delete(id int) error
 }

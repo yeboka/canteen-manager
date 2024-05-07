@@ -25,7 +25,6 @@ const (
 var (
 	errIncorrectEmailOrPassword = errors.New("incorrect email or password")
 	errNotAuthenticated         = errors.New("not authenticated")
-	errCycleDependency          = errors.New("found cycle dependency")
 )
 
 type ctxKey int8
@@ -77,6 +76,8 @@ func (s *server) configureRouter() {
 	admin.Use(s.authenticateUser)
 	admin.Use(s.checkAdmin)
 	admin.HandleFunc("/users/{id}/role", s.handleRoleChange()).Methods("PATCH")
+	admin.HandleFunc("/menu-item/{id}", s.handleMenuItemUpdate()).Methods("PATCH")
+	admin.HandleFunc("/menu-item/{id}", s.handleMenuItemDelete()).Methods("DELETE")
 }
 
 func (s *server) setRequestId(next http.Handler) http.Handler {
@@ -314,6 +315,72 @@ func (s *server) handleMenuItemCreate() http.HandlerFunc {
 		}
 
 		s.respond(writer, request, http.StatusCreated, mi)
+	}
+}
+
+func (s *server) handleMenuItemDelete() http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		vars := mux.Vars(request)
+		idStr, ok := vars["id"]
+		if !ok {
+			s.error(writer, request, http.StatusBadRequest, errors.New("missing user ID in URL"))
+			return
+		}
+
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			s.error(writer, request, http.StatusBadRequest, errors.New("invalid user ID"))
+			return
+		}
+
+		if err := s.store.MenuItem().Delete(id); err != nil {
+			s.error(writer, request, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		s.respond(writer, request, http.StatusOK, id)
+	}
+}
+
+func (s *server) handleMenuItemUpdate() http.HandlerFunc {
+	type requests struct {
+		Name        string `json:"name"`
+		Price       int    `json:"price"`
+		Description string `json:"description"`
+	}
+
+	return func(writer http.ResponseWriter, request *http.Request) {
+		req := &requests{}
+		if err := json.NewDecoder(request.Body).Decode(req); err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+		vars := mux.Vars(request)
+		idStr, ok := vars["id"]
+		if !ok {
+			s.error(writer, request, http.StatusBadRequest, errors.New("missing user ID in URL"))
+			return
+		}
+
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			s.error(writer, request, http.StatusBadRequest, errors.New("invalid user ID"))
+			return
+		}
+
+		mi := &model.MenuItem{
+			ID:          id,
+			Name:        req.Name,
+			Price:       req.Price,
+			Description: req.Description,
+		}
+
+		if err := s.store.MenuItem().Update(mi); err != nil {
+			s.error(writer, request, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		s.respond(writer, request, http.StatusOK, mi)
 	}
 }
 
