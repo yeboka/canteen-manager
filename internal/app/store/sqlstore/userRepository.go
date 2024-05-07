@@ -65,3 +65,27 @@ func (r *UserRepository) FindByEmail(email string) (*model.User, error) {
 
 	return u, nil
 }
+
+// Update ...
+func (r *UserRepository) Update(user *model.User) error {
+	_, err := r.store.db.Exec(
+		"UPDATE users SET username = $1, email = $2 WHERE id = $3",
+		user.Username, user.Email, user.ID,
+	)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// UpdateRole ...
+func (r *UserRepository) UpdateRole(userID int, newRole string) error {
+	_, err := r.store.db.Exec(
+		"UPDATE users SET role = $1 WHERE id = $2",
+		newRole, userID,
+	)
+	if err != nil {
+		return err
+	}
+	return nil
+}

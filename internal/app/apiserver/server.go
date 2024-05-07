@@ -12,6 +12,7 @@ import (
 	"github.com/yeboka/final-project/internal/app/model"
 	"github.com/yeboka/final-project/internal/app/store"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -64,6 +65,12 @@ func (s *server) configureRouter() {
 	private := s.router.PathPrefix("/private").Subrouter()
 	private.Use(s.authenticateUser)
 	private.HandleFunc("/whoami", s.handleWhoAmI()).Methods("GET")
+	private.HandleFunc("/users/{id}", s.handleUserUpdate()).Methods("PATCH")
+
+	admin := s.router.PathPrefix("/admin").Subrouter()
+	admin.Use(s.authenticateUser)
+	admin.Use(s.checkAdmin)
+	admin.HandleFunc("/users/{id}/role", s.handleRoleChange()).Methods("PATCH")
 }
 
 func (s *server) setRequestId(next http.Handler) http.Handler {
@@ -95,6 +102,25 @@ func (s *server) logRequest(next http.Handler) http.Handler {
 	)
 }
 
+func (s *server) checkAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, ok := r.Context().Value(ctxKeyUser).(*model.User)
+		if !ok {
+			s.error(w, r, http.StatusUnauthorized, errors.New("unauthorized access: missing user information"))
+			return
+		}
+
+		if user.Role != "admin" {
+			s.error(w, r, http.StatusForbidden, errors.New("insufficient privileges: requires admin role"))
+			return
+		}
+
+		s.logger.Printf("user %s accessed admin resource (id: %d)", user.Username, user.ID)
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *server) authenticateUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(
 		func(writer http.ResponseWriter, request *http.Request) {
@@ -120,6 +146,91 @@ func (s *server) authenticateUser(next http.Handler) http.Handler {
 			next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), ctxKeyUser, u)))
 		},
 	)
+}
+
+func (s *server) handleRoleChange() http.HandlerFunc {
+	type roleChangeRequest struct {
+		Role string `json:"role"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req roleChangeRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.error(w, r, http.StatusBadRequest, err)
+			return
+		}
+
+		vars := mux.Vars(r)
+		userIDStr, ok := vars["id"]
+		if !ok {
+			s.error(w, r, http.StatusBadRequest, errors.New("missing user ID in URL"))
+			return
+		}
+
+		userID, err := strconv.Atoi(userIDStr)
+		if err != nil {
+			s.error(w, r, http.StatusBadRequest, errors.New("invalid user ID"))
+			return
+		}
+
+		user, err := s.store.User().Find(userID)
+		if err != nil {
+			s.error(w, r, http.StatusNotFound, err)
+			return
+		}
+
+		user.Role = req.Role
+		if err := s.store.User().UpdateRole(userID, req.Role); err != nil {
+			s.error(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		s.respond(w, r, http.StatusOK, map[string]string{"message": "User role updated successfully"})
+	}
+}
+
+func (s *server) handleUserUpdate() http.HandlerFunc {
+	type requests struct {
+		Email    string `json:"email"`
+		Username string `json:"username"`
+	}
+
+	return func(writer http.ResponseWriter, request *http.Request) {
+		vars := mux.Vars(request)
+		idStr, ok := vars["id"]
+		if !ok {
+			s.error(writer, request, http.StatusBadRequest, errors.New("missing user ID in URL"))
+			return
+		}
+
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			s.error(writer, request, http.StatusBadRequest, errors.New("invalid user ID"))
+			return
+		}
+
+		req := &requests{}
+		if err := json.NewDecoder(request.Body).Decode(req); err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		u, err := s.store.User().Find(id)
+		if err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		u.Email = req.Email
+		u.Username = req.Username
+
+		if err := s.store.User().Update(u); err != nil {
+			s.error(writer, request, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		s.respond(writer, request, http.StatusOK, "updated")
+	}
 }
 
 func (s *server) handleWhoAmI() http.HandlerFunc {
