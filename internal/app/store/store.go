@@ -6,4 +6,5 @@ type Store interface {
 	Order() OrderRepository
 	Category() CategoryRepository
 	MenuItem() MenuItemRepository
+	OrderItem() OrderItemRepository
 }

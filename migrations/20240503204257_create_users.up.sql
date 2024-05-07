@@ -7,12 +7,13 @@ CREATE TABLE users
     encrypted_password varchar     not null
 );
 
-CREATE TABLE orders(
-    id bigserial not null primary key,
-    user_id int not null,
-    createdAt date not null,
-    totalAmount int not null ,
-    foreign key (user_id) references users(id)
+CREATE TABLE orders
+(
+    id          bigserial not null primary key,
+    user_id     int       not null,
+    createdAt   date      not null,
+    totalAmount int       not null,
+    foreign key (user_id) references users (id)
 );
 
 CREATE TABLE categories
@@ -26,7 +27,17 @@ CREATE TABLE menuitem
 (
     id          SERIAL PRIMARY KEY,
     category_id INTEGER REFERENCES categories (id),
-    name        VARCHAR NOT NULL UNIQUE ,
+    name        VARCHAR NOT NULL UNIQUE,
     price       INTEGER NOT NULL,
     description VARCHAR NOT NULL
+);
+
+
+CREATE TABLE orderItem
+(
+    id           serial not null primary key,
+    order_id     int    not null,
+    menu_item_id int    not null,
+    quantity     int    not null,
+    foreign key (id) references menuitem (id)
 );

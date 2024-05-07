@@ -9,11 +9,12 @@ import (
 
 // Store ...
 type Store struct {
-	db                 *sql.DB
-	UserRepository     *UserRepository
-	CategoryRepository *CategoryRepository
-	MenuItemRepository *MenuItemRepository
-	OrderRepository    *OrderRepository
+	db                  *sql.DB
+	UserRepository      *UserRepository
+	CategoryRepository  *CategoryRepository
+	MenuItemRepository  *MenuItemRepository
+	OrderRepository     *OrderRepository
+	OrderItemRepository *OrderItemRepository
 }
 
 // New ...
@@ -63,4 +64,14 @@ func (s *Store) MenuItem() store.MenuItemRepository {
 	s.MenuItemRepository = &MenuItemRepository{store: s}
 
 	return s.MenuItemRepository
+}
+
+func (s *Store) OrderItem() store.OrderItemRepository {
+	if s.OrderItemRepository != nil {
+		return s.OrderItemRepository
+	}
+
+	s.OrderItemRepository = &OrderItemRepository{s: s}
+
+	return s.OrderItemRepository
 }

@@ -1,7 +1,6 @@
 package store
 
 import (
-	"database/sql"
 	"github.com/yeboka/final-project/internal/app/model"
 )
 
@@ -18,7 +17,7 @@ type UserRepository interface {
 // OrderRepository ...
 type OrderRepository interface {
 	Create(order *model.Order) error
-	Delete(orderId int) (sql.Result, error)
+	Delete(id int) error
 }
 
 type CategoryRepository interface {
@@ -29,7 +28,14 @@ type CategoryRepository interface {
 
 type MenuItemRepository interface {
 	Create(menuItem *model.MenuItem) error
+	GetPrice(id int) int
+	//FindByName(id int) (*model.MenuItem, error)
 	FindByCategoryId(categoryId int) ([]*model.MenuItem, error)
 	Update(mi *model.MenuItem) error
+	Delete(id int) error
+}
+
+type OrderItemRepository interface {
+	Create(item *model.OrderItem) error
 	Delete(id int) error
 }

@@ -1,7 +1,6 @@
 package sqlstore
 
 import (
-	"database/sql"
 	"github.com/yeboka/final-project/internal/app/model"
 	"time"
 )
@@ -15,20 +14,25 @@ type OrderRepository struct {
 func (o *OrderRepository) Create(order *model.Order) error {
 	order.CreatedAt = time.Now()
 
-	return o.store.db.QueryRow(
-		"INSERT INTO orders (user_id, createdAt, totalAmount) VALUES ($1, $2, $3) RETURNING id",
+	err := o.store.db.QueryRow(
+		"INSERT INTO orders (user_id, createdAt, totalamount) VALUES ($1, $2, $3) RETURNING id",
 		order.UserId,
 		order.CreatedAt,
 		order.TotalAmount,
 	).Scan(&order.ID)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Delete ...
-func (o *OrderRepository) Delete(orderId int) (sql.Result, error) {
-	res, err := o.store.db.Exec("DELETE FROM orders WHERE id = $1", orderId)
+func (o *OrderRepository) Delete(id int) error {
+	_, err := o.store.db.Exec("DELETE FROM orders WHERE id = $1", id)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return res, nil
+	return nil
 }

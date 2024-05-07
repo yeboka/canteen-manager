@@ -66,3 +66,13 @@ func (r *MenuItemRepository) Delete(id int) error {
 
 	return nil
 }
+
+func (r *MenuItemRepository) GetPrice(id int) int {
+	price := 0
+
+	if err := r.store.db.QueryRow("SELECT price from menuitem WHERE id = $1", id).Scan(&price); err != nil {
+		return 0
+	}
+
+	return price
+}
