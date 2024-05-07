@@ -1,6 +1,9 @@
 package sqlstore
 
-import "github.com/yeboka/final-project/internal/app/model"
+import (
+	"database/sql"
+	"github.com/yeboka/final-project/internal/app/model"
+)
 
 // CategoryRepository ...
 type CategoryRepository struct {
@@ -42,4 +45,37 @@ func (r *CategoryRepository) Find(id int) (*model.Category, error) {
 	}
 
 	return c, nil
+}
+
+func (r *CategoryRepository) GetAllCategories() ([]*model.Category, error) {
+	rows, err := r.store.db.Query(
+		"SELECT id, name, parent_id FROM categories",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var categories []*model.Category
+	for rows.Next() {
+		c := &model.Category{}
+		var parentID sql.NullInt64
+		if err := rows.Scan(
+			&c.ID,
+			&c.Name,
+			&parentID,
+		); err != nil {
+			return nil, err
+		}
+		if parentID.Valid {
+			c.ParentID = int(parentID.Int64)
+		} else {
+			c.ParentID = 0
+		}
+		categories = append(categories, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return categories, nil
 }

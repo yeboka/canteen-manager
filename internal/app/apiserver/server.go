@@ -66,6 +66,7 @@ func (s *server) configureRouter() {
 	private.Use(s.authenticateUser)
 	private.HandleFunc("/whoami", s.handleWhoAmI()).Methods("GET")
 	private.HandleFunc("/category", s.handleCategoryCreate()).Methods("POST")
+	private.HandleFunc("/category", s.handleCategoriesGet()).Methods("GET")
 	private.HandleFunc("/menu-item", s.handleMenuItemCreate()).Methods("POST")
 }
 
@@ -123,6 +124,53 @@ func (s *server) authenticateUser(next http.Handler) http.Handler {
 			next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), ctxKeyUser, u)))
 		},
 	)
+}
+
+type CategoryTree struct {
+	ID        int               `json:"id"`
+	Name      string            `json:"name"`
+	MenuItems []*model.MenuItem `json:"menu_items"`
+	Children  []*CategoryTree   `json:"children,omitempty"`
+}
+
+func (s *server) handleCategoriesGet() http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+
+		categories, err := s.store.Category().GetAllCategories()
+		if err != nil {
+			s.error(writer, request, http.StatusInternalServerError, err)
+			return
+		}
+
+		categoryMap := make(map[int]*CategoryTree)
+		var roots []*CategoryTree
+
+		for _, category := range categories {
+			items, err := s.store.MenuItem().FindByCategoryId(category.ID)
+			if err != nil {
+				s.error(writer, request, http.StatusInternalServerError, err)
+				return
+			}
+			categoryMap[category.ID] = &CategoryTree{
+				ID:        category.ID,
+				Name:      category.Name,
+				MenuItems: items,
+			}
+		}
+
+		for _, category := range categories {
+			if category.ParentID == 0 {
+				roots = append(roots, categoryMap[category.ID])
+			} else {
+				parent := categoryMap[category.ParentID]
+				if parent != nil {
+					parent.Children = append(parent.Children, categoryMap[category.ID])
+				}
+			}
+		}
+
+		s.respond(writer, request, http.StatusCreated, roots)
+	}
 }
 
 func (s *server) handleMenuItemCreate() http.HandlerFunc {

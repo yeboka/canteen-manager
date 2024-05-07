@@ -14,9 +14,10 @@ type UserRepository interface {
 type CategoryRepository interface {
 	Create(category *model.Category) error
 	Find(id int) (*model.Category, error)
+	GetAllCategories() ([]*model.Category, error)
 }
 
 type MenuItemRepository interface {
 	Create(menuItem *model.MenuItem) error
-	//FindByName(id int) (*model.MenuItem, error)
+	FindByCategoryId(categoryId int) ([]*model.MenuItem, error)
 }
