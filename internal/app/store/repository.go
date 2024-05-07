@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"github.com/yeboka/final-project/internal/app/model"
 )
 
@@ -9,6 +10,12 @@ type UserRepository interface {
 	Create(*model.User) error
 	Find(int) (*model.User, error)
 	FindByEmail(string) (*model.User, error)
+}
+
+// OrderRepository ...
+type OrderRepository interface {
+	Create(order *model.Order) error
+	Delete(orderId int) (sql.Result, error)
 }
 
 type CategoryRepository interface {

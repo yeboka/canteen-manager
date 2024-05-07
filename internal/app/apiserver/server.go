@@ -12,6 +12,7 @@ import (
 	"github.com/yeboka/final-project/internal/app/model"
 	"github.com/yeboka/final-project/internal/app/store"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -61,9 +62,11 @@ func (s *server) configureRouter() {
 
 	s.router.HandleFunc("/users", s.handleUsersCreate()).Methods("POST")
 	s.router.HandleFunc("/sessions", s.handleSessionsCreate()).Methods("POST")
+	s.router.HandleFunc("/orders", s.createOrder()).Methods("POST")
 
 	private := s.router.PathPrefix("/private").Subrouter()
 	private.Use(s.authenticateUser)
+	private.HandleFunc("/orders/{id}", s.deleteOrder()).Methods("DELETE")
 	private.HandleFunc("/whoami", s.handleWhoAmI()).Methods("GET")
 	private.HandleFunc("/category", s.handleCategoryCreate()).Methods("POST")
 	private.HandleFunc("/menu-item", s.handleMenuItemCreate()).Methods("POST")
@@ -223,6 +226,54 @@ func (s *server) handleUsersCreate() http.HandlerFunc {
 
 		u.Sanitize()
 		s.respond(writer, request, http.StatusCreated, u)
+	}
+}
+
+func (s *server) createOrder() http.HandlerFunc {
+	type requests struct {
+		UserId      int `json:"user_id"`
+		TotalAmount int `json:"totalAmount"`
+	}
+
+	return func(writer http.ResponseWriter, request *http.Request) {
+		req := &requests{}
+		if err := json.NewDecoder(request.Body).Decode(req); err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		o := &model.Order{
+			UserId:      req.UserId,
+			TotalAmount: req.TotalAmount,
+		}
+
+		if err := s.store.Order().Create(o); err != nil {
+			s.error(writer, request, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		s.respond(writer, request, http.StatusCreated, o)
+	}
+}
+
+func (s *server) deleteOrder() http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		vars := mux.Vars(request)
+		orderId := vars["id"]
+
+		id, err := strconv.Atoi(orderId)
+		if err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		res, err := s.store.Order().Delete(id)
+		if err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		s.respond(writer, request, http.StatusOK, res)
 	}
 }
 

@@ -7,6 +7,13 @@ CREATE TABLE users
     encrypted_password varchar     not null
 );
 
+CREATE TABLE orders(
+    id bigserial not null primary key,
+    user_id int not null,
+    createdAt date not null,
+    totalAmount int not null ,
+    foreign key (user_id) references users(id)
+);
 
 CREATE TABLE categories
 (
