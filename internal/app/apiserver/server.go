@@ -25,6 +25,7 @@ const (
 var (
 	errIncorrectEmailOrPassword = errors.New("incorrect email or password")
 	errNotAuthenticated         = errors.New("not authenticated")
+	errCycleDependency          = errors.New("found cycle dependency")
 )
 
 type ctxKey int8
@@ -62,14 +63,12 @@ func (s *server) configureRouter() {
 	s.router.HandleFunc("/users", s.handleUsersCreate()).Methods("POST")
 	s.router.HandleFunc("/sessions", s.handleSessionsCreate()).Methods("POST")
 	s.router.HandleFunc("/orders", s.createOrder()).Methods("POST")
+	s.router.HandleFunc("/category", s.handleCategoriesGet()).Methods("GET")
 
 	private := s.router.PathPrefix("/private").Subrouter()
 	private.Use(s.authenticateUser)
 	private.HandleFunc("/orders/{id}", s.deleteOrder()).Methods("DELETE")
 	private.HandleFunc("/whoami", s.handleWhoAmI()).Methods("GET")
-	private.HandleFunc("/category", s.handleCategoryCreate()).Methods("POST")
-	private.HandleFunc("/category", s.handleCategoriesGet()).Methods("GET")
-	private.HandleFunc("/menu-item", s.handleMenuItemCreate()).Methods("POST")
 	private.HandleFunc("/users/{id}", s.handleUserUpdate()).Methods("PATCH")
 
 	admin := s.router.PathPrefix("/admin").Subrouter()
@@ -78,6 +77,9 @@ func (s *server) configureRouter() {
 	admin.HandleFunc("/users/{id}/role", s.handleRoleChange()).Methods("PATCH")
 	admin.HandleFunc("/menu-item/{id}", s.handleMenuItemUpdate()).Methods("PATCH")
 	admin.HandleFunc("/menu-item/{id}", s.handleMenuItemDelete()).Methods("DELETE")
+	admin.HandleFunc("/users/{id}", s.handleDeleteUser()).Methods("DELETE")
+	admin.HandleFunc("/menu-item", s.handleMenuItemCreate()).Methods("POST")
+	admin.HandleFunc("/category", s.handleCategoryCreate()).Methods("POST")
 }
 
 func (s *server) setRequestId(next http.Handler) http.Handler {
@@ -153,6 +155,36 @@ func (s *server) authenticateUser(next http.Handler) http.Handler {
 			next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), ctxKeyUser, u)))
 		},
 	)
+}
+
+func (s *server) handleDeleteUser() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		idStr, ok := vars["id"]
+		if !ok {
+			s.error(w, r, http.StatusBadRequest, errors.New("missing user ID in URL"))
+			return
+		}
+
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			s.error(w, r, http.StatusBadRequest, errors.New("invalid user ID"))
+			return
+		}
+
+		_, err = s.store.User().Find(id)
+		if err != nil {
+			s.error(w, r, http.StatusNotFound, err)
+			return
+		}
+
+		if err := s.store.User().Delete(id); err != nil {
+			s.error(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		s.respond(w, r, http.StatusOK, map[string]string{"message": "User deleted successfully"})
+	}
 }
 
 func (s *server) handleRoleChange() http.HandlerFunc {

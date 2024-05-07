@@ -12,6 +12,7 @@ type UserRepository interface {
 	FindByEmail(string) (*model.User, error)
 	Update(user *model.User) error
 	UpdateRole(id int, role string) error
+	Delete(id int) error
 }
 
 // OrderRepository ...
