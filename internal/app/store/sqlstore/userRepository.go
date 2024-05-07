@@ -1,6 +1,7 @@
 package sqlstore
 
 import (
+	"errors"
 	"github.com/yeboka/final-project/internal/app/model"
 )
 
@@ -67,6 +68,10 @@ func (r *UserRepository) FindByEmail(email string) (*model.User, error) {
 
 // Update ...
 func (r *UserRepository) Update(user *model.User) error {
+	if err := user.Validate(); err != nil {
+		return err
+	}
+
 	_, err := r.store.db.Exec(
 		"UPDATE users SET username = $1, email = $2 WHERE id = $3",
 		user.Username, user.Email, user.ID,
@@ -79,10 +84,23 @@ func (r *UserRepository) Update(user *model.User) error {
 
 // UpdateRole ...
 func (r *UserRepository) UpdateRole(userID int, newRole string) error {
+	if newRole != "user" && newRole != "admin" {
+		return errors.New("invalid role")
+	}
+
 	_, err := r.store.db.Exec(
 		"UPDATE users SET role = $1 WHERE id = $2",
 		newRole, userID,
 	)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Delete ...
+func (r *UserRepository) Delete(id int) error {
+	_, err := r.store.db.Exec("DELETE FROM users WHERE id = $1", id)
 	if err != nil {
 		return err
 	}
