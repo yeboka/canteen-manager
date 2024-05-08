@@ -39,5 +39,6 @@ CREATE TABLE orderItem
     order_id     int    not null,
     menu_item_id int    not null,
     quantity     int    not null,
-    foreign key (id) references menuitem (id)
+    foreign key (menu_item_id) references menuitem (id),
+    foreign key (order_id) references orders(id)
 );

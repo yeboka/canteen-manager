@@ -18,6 +18,7 @@ type UserRepository interface {
 type OrderRepository interface {
 	Create(order *model.Order) error
 	Delete(id int) error
+	GetOrder(id int) (*model.Order, error)
 }
 
 type CategoryRepository interface {
@@ -38,4 +39,5 @@ type MenuItemRepository interface {
 type OrderItemRepository interface {
 	Create(item *model.OrderItem) error
 	Delete(id int) error
+	DeleteAllOrder(orderId int) error
 }

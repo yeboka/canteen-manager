@@ -486,15 +486,24 @@ func (s *server) createOrder() http.HandlerFunc {
 			return
 		}
 
+		order, err := s.store.Order().GetOrder(o.ID)
+		if err != nil {
+			s.error(writer, request, http.StatusInternalServerError, err)
+			return
+		}
+
 		for i := 0; i < len(req.MenuItemId); i++ {
 			mi := &model.OrderItem{
+				OrderId:    order.ID,
 				MenuItemId: req.MenuItemId[i],
-				//TODO There is a problem with adding orderId or UserId twice
-				OrderId:  o.ID,
-				Quantity: req.Quantity[i],
+				Quantity:   req.Quantity[i],
 			}
 
 			if err := s.store.OrderItem().Create(mi); err != nil {
+				if e := s.store.Order().Delete(order.ID); e != nil {
+					s.error(writer, request, http.StatusInternalServerError, e)
+					return
+				}
 				s.error(writer, request, http.StatusUnprocessableEntity, err)
 				return
 			}
@@ -513,6 +522,12 @@ func (s *server) deleteOrder() http.HandlerFunc {
 		id, err := strconv.Atoi(orderId)
 		if err != nil {
 			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		ex := s.store.OrderItem().DeleteAllOrder(id)
+		if ex != nil {
+			s.error(writer, request, http.StatusBadRequest, ex)
 			return
 		}
 

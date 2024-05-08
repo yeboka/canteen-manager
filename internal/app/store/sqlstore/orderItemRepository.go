@@ -24,3 +24,12 @@ func (i *OrderItemRepository) Delete(id int) error {
 
 	return nil
 }
+
+func (i *OrderItemRepository) DeleteAllOrder(orderId int) error {
+	_, err := i.s.db.Exec("DELETE FROM orderitem WHERE order_id = $1", orderId)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
