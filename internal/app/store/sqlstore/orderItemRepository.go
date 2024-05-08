@@ -24,3 +24,37 @@ func (i *OrderItemRepository) Delete(id int) error {
 
 	return nil
 }
+
+func (i *OrderItemRepository) DeleteAllOrder(orderId int) error {
+	_, err := i.s.db.Exec("DELETE FROM orderitem WHERE order_id = $1", orderId)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// GetOrderItems ...
+func (i *OrderItemRepository) GetOrderItems(orderId int) ([]*model.OrderItem, error) {
+	var orderItems []*model.OrderItem
+
+	rows, err := i.s.db.Query("SELECT id, order_id, menu_item_id, quantity FROM orderitem WHERE order_id = $1", orderId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var oi model.OrderItem
+		if err := rows.Scan(&oi.ID, &oi.MenuItemId, &oi.OrderId, &oi.Quantity); err != nil {
+			return nil, err
+		}
+		orderItems = append(orderItems, &oi)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return orderItems, nil
+}

@@ -25,7 +25,6 @@ const (
 var (
 	errIncorrectEmailOrPassword = errors.New("incorrect email or password")
 	errNotAuthenticated         = errors.New("not authenticated")
-	errCycleDependency          = errors.New("found cycle dependency")
 )
 
 type ctxKey int8
@@ -62,12 +61,13 @@ func (s *server) configureRouter() {
 
 	s.router.HandleFunc("/users", s.handleUsersCreate()).Methods("POST")
 	s.router.HandleFunc("/sessions", s.handleSessionsCreate()).Methods("POST")
-	s.router.HandleFunc("/orders", s.createOrder()).Methods("POST")
 	s.router.HandleFunc("/category", s.handleCategoriesGet()).Methods("GET")
 
 	private := s.router.PathPrefix("/private").Subrouter()
 	private.Use(s.authenticateUser)
-	private.HandleFunc("/orders/{id}", s.deleteOrder()).Methods("DELETE")
+	private.HandleFunc("/orders", s.handleCreateOrder()).Methods("POST")
+	private.HandleFunc("/orders/{id}", s.handleDeleteOrder()).Methods("DELETE")
+	private.HandleFunc("/allMyOrders", s.handleGetAllOrders()).Methods("GET")
 	private.HandleFunc("/whoami", s.handleWhoAmI()).Methods("GET")
 	private.HandleFunc("/users/{id}", s.handleUserUpdate()).Methods("PATCH")
 
@@ -133,20 +133,9 @@ func (s *server) checkAdmin(next http.Handler) http.Handler {
 func (s *server) authenticateUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(
 		func(writer http.ResponseWriter, request *http.Request) {
-			session, err := s.sessionStore.Get(request, sessionName)
-			if err != nil {
-				s.error(writer, request, http.StatusInternalServerError, err)
-				return
-			}
+			userId, _ := s.getUserId(writer, request)
 
-			id, ok := session.Values["user_id"]
-
-			if !ok {
-				s.error(writer, request, http.StatusUnauthorized, errNotAuthenticated)
-				return
-			}
-
-			u, err := s.store.User().Find(id.(int))
+			u, err := s.store.User().Find(userId)
 			if err != nil {
 				s.error(writer, request, http.StatusUnauthorized, errNotAuthenticated)
 				return
@@ -289,7 +278,6 @@ func (s *server) handleCategoriesGet() http.HandlerFunc {
 		}
 
 		categoryMap := make(map[int]*CategoryTree)
-		var roots []*CategoryTree
 
 		for _, category := range categories {
 			items, err := s.store.MenuItem().FindByCategoryId(category.ID)
@@ -304,8 +292,11 @@ func (s *server) handleCategoriesGet() http.HandlerFunc {
 			}
 		}
 
+		var roots []*CategoryTree
+		s.logger.Info(categories)
+		s.logger.Info(categoryMap)
 		for _, category := range categories {
-			if category.ParentID == 0 {
+			if category.ParentID == -1 {
 				roots = append(roots, categoryMap[category.ID])
 			} else {
 				parent := categoryMap[category.ParentID]
@@ -315,7 +306,7 @@ func (s *server) handleCategoriesGet() http.HandlerFunc {
 			}
 		}
 
-		s.respond(writer, request, http.StatusCreated, roots)
+		s.respond(writer, request, http.StatusOK, roots)
 	}
 }
 
@@ -419,7 +410,7 @@ func (s *server) handleMenuItemUpdate() http.HandlerFunc {
 func (s *server) handleCategoryCreate() http.HandlerFunc {
 	type requests struct {
 		Name     string `json:"name"`
-		ParentId int    `json:"parentId"`
+		ParentId int    `json:"parentId,omitempty"`
 	}
 
 	return func(writer http.ResponseWriter, request *http.Request) {
@@ -433,11 +424,16 @@ func (s *server) handleCategoryCreate() http.HandlerFunc {
 			Name:     req.Name,
 			ParentID: req.ParentId,
 		}
-
-		_, err := s.store.Category().Find(req.ParentId)
-		if err != nil {
-			s.error(writer, request, http.StatusBadRequest, err)
-			return
+		s.logger.Info(req)
+		s.logger.Info(ctg)
+		if req.ParentId > 0 {
+			parentCategory, err := s.store.Category().Find(req.ParentId)
+			if err != nil {
+				s.error(writer, request, http.StatusBadRequest, err)
+				return
+			} else {
+				ctg.ParentID = parentCategory.ID
+			}
 		}
 
 		if err := s.store.Category().Create(ctg); err != nil {
@@ -455,14 +451,22 @@ func (s *server) handleWhoAmI() http.HandlerFunc {
 	}
 }
 
-func (s *server) createOrder() http.HandlerFunc {
+func (s *server) handleCreateOrder() http.HandlerFunc {
+	type respondOrder struct {
+		Id         int                `json:"id"`
+		OrderItems []*model.OrderItem `json:"order_item"`
+		CreatedAt  time.Time          `json:"created_At"`
+		TotalPrice int                `json:"total_price"`
+	}
+
 	type requests struct {
-		UserId     int   `json:"user_id"`
 		MenuItemId []int `json:"menu_item_id"`
 		Quantity   []int `json:"quantity"`
 	}
 
 	return func(writer http.ResponseWriter, request *http.Request) {
+		userId, _ := s.getUserId(writer, request)
+
 		req := &requests{}
 		if err := json.NewDecoder(request.Body).Decode(req); err != nil {
 			s.error(writer, request, http.StatusBadRequest, err)
@@ -476,36 +480,91 @@ func (s *server) createOrder() http.HandlerFunc {
 		}
 
 		o := &model.Order{
-			UserId:      req.UserId,
+			UserId:      userId,
 			TotalAmount: totalAmount,
 		}
 
-		err := s.store.Order().Create(o)
-		if err != nil {
-			s.error(writer, request, http.StatusUnprocessableEntity, err)
+		exception := s.store.Order().Create(o)
+		if exception != nil {
+			s.error(writer, request, http.StatusUnprocessableEntity, exception)
 			return
 		}
 
+		var orderItems []*model.OrderItem
+
 		for i := 0; i < len(req.MenuItemId); i++ {
 			mi := &model.OrderItem{
+				OrderId:    o.ID,
 				MenuItemId: req.MenuItemId[i],
-				//TODO There is a problem with adding orderId or UserId twice
-				OrderId:  o.ID,
-				Quantity: req.Quantity[i],
+				Quantity:   req.Quantity[i],
 			}
 
 			if err := s.store.OrderItem().Create(mi); err != nil {
+				if e := s.store.Order().Delete(o.ID); e != nil {
+					s.error(writer, request, http.StatusInternalServerError, e)
+					return
+				}
 				s.error(writer, request, http.StatusUnprocessableEntity, err)
 				return
 			}
+
+			orderItems = append(orderItems, mi)
 		}
 
-		s.respond(writer, request, http.StatusCreated, o)
-	}
+		respondOrder := respondOrder{
+			Id:         o.ID,
+			CreatedAt:  o.CreatedAt,
+			TotalPrice: totalAmount,
+			OrderItems: orderItems,
+		}
 
+		s.respond(writer, request, http.StatusCreated, respondOrder)
+	}
 }
 
-func (s *server) deleteOrder() http.HandlerFunc {
+func (s *server) handleGetAllOrders() http.HandlerFunc {
+	type respondOrder struct {
+		Id         int                `json:"id"`
+		OrderItems []*model.OrderItem `json:"order_item"`
+		CreatedAt  time.Time          `json:"created_At"`
+		TotalPrice int                `json:"total_price"`
+	}
+
+	return func(writer http.ResponseWriter, request *http.Request) {
+		userId, err := s.getUserId(writer, request)
+		if err != nil {
+			s.error(writer, request, http.StatusUnauthorized, err)
+			return
+		}
+
+		orders, err := s.store.Order().GetOrders(userId)
+		if err != nil {
+			s.error(writer, request, http.StatusInternalServerError, err)
+			return
+		}
+
+		var respondOrders []respondOrder
+		for _, order := range orders {
+			orderItems, err := s.store.OrderItem().GetOrderItems(order.ID)
+			if err != nil {
+				s.error(writer, request, http.StatusInternalServerError, err)
+				return
+			}
+
+			respondOrder := respondOrder{
+				Id:         order.ID,
+				CreatedAt:  order.CreatedAt,
+				TotalPrice: order.TotalAmount,
+				OrderItems: orderItems,
+			}
+			respondOrders = append(respondOrders, respondOrder)
+		}
+
+		s.respond(writer, request, http.StatusOK, respondOrders)
+	}
+}
+
+func (s *server) handleDeleteOrder() http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		vars := mux.Vars(request)
 		orderId := vars["id"]
@@ -513,6 +572,12 @@ func (s *server) deleteOrder() http.HandlerFunc {
 		id, err := strconv.Atoi(orderId)
 		if err != nil {
 			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		ex := s.store.OrderItem().DeleteAllOrder(id)
+		if ex != nil {
+			s.error(writer, request, http.StatusBadRequest, ex)
 			return
 		}
 
@@ -601,4 +666,22 @@ func (s *server) respond(writer http.ResponseWriter, request *http.Request, code
 	if data != nil {
 		json.NewEncoder(writer).Encode(data)
 	}
+}
+
+func (s *server) getUserId(writer http.ResponseWriter, request *http.Request) (int, error) {
+	session, err := s.sessionStore.Get(request, sessionName)
+
+	if err != nil {
+		s.error(writer, request, http.StatusInternalServerError, err)
+		return 0, err
+	}
+
+	userId, authorized := session.Values["user_id"]
+
+	if !authorized {
+		s.error(writer, request, http.StatusUnauthorized, errNotAuthenticated)
+		return 0, nil
+	}
+
+	return userId.(int), nil
 }
