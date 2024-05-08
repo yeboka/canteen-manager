@@ -1,4 +1,4 @@
 bind_addr = ":8080"
 log_level = "debug"
-database_url = "postgres://user:password@localhost:5432/canteen?sslmode=disable"
+database_url = "postgres://user:password@my-postgres:5432/canteen?sslmode=disable"
 session_key = "9a92e8d6ef3cc75eeaf048061878f7c90d75b1925d38ae6dffaac7b97eeb200a"
