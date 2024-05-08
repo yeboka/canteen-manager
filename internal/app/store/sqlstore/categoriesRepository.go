@@ -2,6 +2,7 @@ package sqlstore
 
 import (
 	"database/sql"
+	"fmt"
 	"github.com/yeboka/final-project/internal/app/model"
 )
 
@@ -15,23 +16,26 @@ func (r *CategoryRepository) Create(c *model.Category) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
+	fmt.Println(c)
 
-	var parentIDValue interface{}
-	if c.ParentID != 0 {
-		parentIDValue = c.ParentID
-	} else {
-		parentIDValue = nil
+	if c.ParentID <= 0 {
+		return r.store.db.QueryRow(
+			"INSERT INTO categories (name) VALUES ($1) RETURNING id",
+			c.Name,
+		).Scan(&c.ID)
 	}
 
 	return r.store.db.QueryRow(
 		"INSERT INTO categories (name, parent_id) VALUES ($1, $2) RETURNING id",
 		c.Name,
-		parentIDValue,
+		c.ParentID,
 	).Scan(&c.ID)
 }
 
 func (r *CategoryRepository) Find(id int) (*model.Category, error) {
 	c := &model.Category{}
+
+	var parentID sql.NullInt64
 
 	if err := r.store.db.QueryRow(
 		"SELECT id, name, parent_id FROM categories WHERE id = $1",
@@ -39,9 +43,15 @@ func (r *CategoryRepository) Find(id int) (*model.Category, error) {
 	).Scan(
 		&c.ID,
 		&c.Name,
-		&c.ParentID,
+		&parentID,
 	); err != nil {
 		return nil, err
+	}
+
+	if parentID.Valid {
+		c.ParentID = int(parentID.Int64)
+	} else {
+		c.ParentID = -1
 	}
 
 	return c, nil
@@ -58,8 +68,8 @@ func (r *CategoryRepository) GetAllCategories() ([]*model.Category, error) {
 
 	var categories []*model.Category
 	for rows.Next() {
-		c := &model.Category{}
 		var parentID sql.NullInt64
+		c := &model.Category{}
 		if err := rows.Scan(
 			&c.ID,
 			&c.Name,
@@ -67,11 +77,14 @@ func (r *CategoryRepository) GetAllCategories() ([]*model.Category, error) {
 		); err != nil {
 			return nil, err
 		}
+
 		if parentID.Valid {
 			c.ParentID = int(parentID.Int64)
 		} else {
-			c.ParentID = 0
+			c.ParentID = -1
 		}
+
+		fmt.Println(c)
 		categories = append(categories, c)
 	}
 	if err := rows.Err(); err != nil {

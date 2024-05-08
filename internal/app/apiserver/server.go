@@ -25,7 +25,6 @@ const (
 var (
 	errIncorrectEmailOrPassword = errors.New("incorrect email or password")
 	errNotAuthenticated         = errors.New("not authenticated")
-	errCycleDependency          = errors.New("found cycle dependency")
 )
 
 type ctxKey int8
@@ -289,7 +288,6 @@ func (s *server) handleCategoriesGet() http.HandlerFunc {
 		}
 
 		categoryMap := make(map[int]*CategoryTree)
-		var roots []*CategoryTree
 
 		for _, category := range categories {
 			items, err := s.store.MenuItem().FindByCategoryId(category.ID)
@@ -304,8 +302,11 @@ func (s *server) handleCategoriesGet() http.HandlerFunc {
 			}
 		}
 
+		var roots []*CategoryTree
+		s.logger.Info(categories)
+		s.logger.Info(categoryMap)
 		for _, category := range categories {
-			if category.ParentID == 0 {
+			if category.ParentID == -1 {
 				roots = append(roots, categoryMap[category.ID])
 			} else {
 				parent := categoryMap[category.ParentID]
@@ -315,7 +316,7 @@ func (s *server) handleCategoriesGet() http.HandlerFunc {
 			}
 		}
 
-		s.respond(writer, request, http.StatusCreated, roots)
+		s.respond(writer, request, http.StatusOK, roots)
 	}
 }
 
@@ -419,7 +420,7 @@ func (s *server) handleMenuItemUpdate() http.HandlerFunc {
 func (s *server) handleCategoryCreate() http.HandlerFunc {
 	type requests struct {
 		Name     string `json:"name"`
-		ParentId int    `json:"parentId"`
+		ParentId int    `json:"parentId,omitempty"`
 	}
 
 	return func(writer http.ResponseWriter, request *http.Request) {
@@ -433,11 +434,16 @@ func (s *server) handleCategoryCreate() http.HandlerFunc {
 			Name:     req.Name,
 			ParentID: req.ParentId,
 		}
-
-		_, err := s.store.Category().Find(req.ParentId)
-		if err != nil {
-			s.error(writer, request, http.StatusBadRequest, err)
-			return
+		s.logger.Info(req)
+		s.logger.Info(ctg)
+		if req.ParentId > 0 {
+			parentCategory, err := s.store.Category().Find(req.ParentId)
+			if err != nil {
+				s.error(writer, request, http.StatusBadRequest, err)
+				return
+			} else {
+				ctg.ParentID = parentCategory.ID
+			}
 		}
 
 		if err := s.store.Category().Create(ctg); err != nil {

@@ -19,7 +19,7 @@ CREATE TABLE orders
 CREATE TABLE categories
 (
     id        SERIAL PRIMARY KEY,
-    parent_id INTEGER REFERENCES categories (id),
+    parent_id INTEGER DEFAULT NULL REFERENCES categories (id),
     name      VARCHAR NOT NULL UNIQUE
 );
 
@@ -31,6 +31,7 @@ CREATE TABLE menuitem
     price       INTEGER NOT NULL,
     description VARCHAR NOT NULL
 );
+
 
 
 CREATE TABLE orderItem
