@@ -25,6 +25,15 @@ func (i *OrderItemRepository) Delete(id int) error {
 	return nil
 }
 
+func (i *OrderItemRepository) Update(menuItemId int, quantity int) error {
+	_, err := i.s.db.Exec("UPDATE orderitem SET quantity = $1 WHERE menu_item_id = $2", quantity, menuItemId)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (i *OrderItemRepository) DeleteAllOrder(orderId int) error {
 	_, err := i.s.db.Exec("DELETE FROM orderitem WHERE order_id = $1", orderId)
 	if err != nil {

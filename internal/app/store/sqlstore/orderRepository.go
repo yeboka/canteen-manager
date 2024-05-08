@@ -37,6 +37,15 @@ func (o *OrderRepository) Delete(id int) error {
 	return nil
 }
 
+func (o *OrderRepository) Update(id int, totalAmount int) error {
+	_, err := o.store.db.Exec("UPDATE orders SET totalamount = $1 WHERE id = $2", totalAmount, id)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // GetOrders ...
 func (o *OrderRepository) GetOrders(userId int) ([]*model.Order, error) {
 	var orders []*model.Order

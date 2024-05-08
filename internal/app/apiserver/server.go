@@ -68,6 +68,7 @@ func (s *server) configureRouter() {
 	private.HandleFunc("/orders", s.handleCreateOrder()).Methods("POST")
 	private.HandleFunc("/orders/{id}", s.handleDeleteOrder()).Methods("DELETE")
 	private.HandleFunc("/allMyOrders", s.handleGetAllOrders()).Methods("GET")
+	private.HandleFunc("/updateOrder/{id}", s.handleUpdateOrder()).Methods("PATCH")
 	private.HandleFunc("/whoami", s.handleWhoAmI()).Methods("GET")
 	private.HandleFunc("/users/{id}", s.handleUserUpdate()).Methods("PATCH")
 
@@ -561,6 +562,65 @@ func (s *server) handleGetAllOrders() http.HandlerFunc {
 		}
 
 		s.respond(writer, request, http.StatusOK, respondOrders)
+	}
+}
+
+func (s *server) handleUpdateOrder() http.HandlerFunc {
+	type respondOrder struct {
+		Id         int                `json:"id"`
+		OrderItems []*model.OrderItem `json:"order_item"`
+		TotalPrice int                `json:"total_price"`
+	}
+
+	type requests struct {
+		MenuItemId []int `json:"menu_item_id"`
+		Quantity   []int `json:"quantity"`
+	}
+
+	return func(writer http.ResponseWriter, request *http.Request) {
+		vars := mux.Vars(request)
+		id := vars["id"]
+
+		orderId, err := strconv.Atoi(id)
+		if err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		req := &requests{}
+		if err := json.NewDecoder(request.Body).Decode(req); err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		var totalAmount int
+		for i := 0; i < len(req.MenuItemId); i++ {
+			price := s.store.MenuItem().GetPrice(req.MenuItemId[i])
+			totalAmount += price * req.Quantity[i]
+
+			e := s.store.OrderItem().Update(req.MenuItemId[i], req.Quantity[i])
+			if e != nil {
+				s.error(writer, request, http.StatusBadRequest, err)
+				return
+			}
+		}
+
+		exception := s.store.Order().Update(orderId, totalAmount)
+		if exception != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		var respondOrders []*model.OrderItem
+		respondOrders, err = s.store.OrderItem().GetOrderItems(orderId)
+
+		respondOrder := respondOrder{
+			Id:         orderId,
+			OrderItems: respondOrders,
+			TotalPrice: totalAmount,
+		}
+
+		s.respond(writer, request, http.StatusOK, respondOrder)
 	}
 }
 
