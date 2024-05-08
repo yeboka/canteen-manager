@@ -37,18 +37,28 @@ func (o *OrderRepository) Delete(id int) error {
 	return nil
 }
 
-// GetOrder ...
-func (o *OrderRepository) GetOrder(id int) (*model.Order, error) {
-	order := &model.Order{}
+// GetOrders ...
+func (o *OrderRepository) GetOrders(userId int) ([]*model.Order, error) {
+	var orders []*model.Order
 
-	if err := o.store.db.QueryRow(
-		"SELECT id, user_id, createdat, totalamount FROM orders WHERE id = $1", id).
-		Scan(&order.ID,
-			&order.UserId,
-			&order.CreatedAt,
-			&order.TotalAmount); err != nil {
+	rows, err := o.store.db.Query("SELECT id, user_id, createdat, totalamount FROM orders WHERE user_id = $1", userId)
+	if err != nil {
 		return nil, err
 	}
 
-	return order, nil
+	defer rows.Close()
+
+	for rows.Next() {
+		var o model.Order
+		if err := rows.Scan(&o.ID, &o.UserId, &o.CreatedAt, &o.TotalAmount); err != nil {
+			return nil, err
+		}
+		orders = append(orders, &o)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return orders, nil
 }
