@@ -463,8 +463,9 @@ func (s *server) handleWhoAmI() http.HandlerFunc {
 
 func (s *server) createOrder() http.HandlerFunc {
 	type requests struct {
-		UserId      int `json:"user_id"`
-		TotalAmount int `json:"totalAmount"`
+		UserId     int   `json:"user_id"`
+		MenuItemId []int `json:"menu_item_id"`
+		Quantity   []int `json:"quantity"`
 	}
 
 	return func(writer http.ResponseWriter, request *http.Request) {
@@ -474,18 +475,40 @@ func (s *server) createOrder() http.HandlerFunc {
 			return
 		}
 
-		o := &model.Order{
-			UserId:      req.UserId,
-			TotalAmount: req.TotalAmount,
+		var totalAmount int
+		for i := 0; i < len(req.MenuItemId); i++ {
+			price := s.store.MenuItem().GetPrice(req.MenuItemId[i])
+			totalAmount += price * req.Quantity[i]
 		}
 
-		if err := s.store.Order().Create(o); err != nil {
+		o := &model.Order{
+			UserId:      req.UserId,
+			TotalAmount: totalAmount,
+		}
+
+		err := s.store.Order().Create(o)
+		if err != nil {
 			s.error(writer, request, http.StatusUnprocessableEntity, err)
 			return
 		}
 
+		for i := 0; i < len(req.MenuItemId); i++ {
+			mi := &model.OrderItem{
+				MenuItemId: req.MenuItemId[i],
+				//TODO There is a problem with adding orderId or UserId twice
+				OrderId:  o.ID,
+				Quantity: req.Quantity[i],
+			}
+
+			if err := s.store.OrderItem().Create(mi); err != nil {
+				s.error(writer, request, http.StatusUnprocessableEntity, err)
+				return
+			}
+		}
+
 		s.respond(writer, request, http.StatusCreated, o)
 	}
+
 }
 
 func (s *server) deleteOrder() http.HandlerFunc {
@@ -499,13 +522,13 @@ func (s *server) deleteOrder() http.HandlerFunc {
 			return
 		}
 
-		res, err := s.store.Order().Delete(id)
-		if err != nil {
-			s.error(writer, request, http.StatusBadRequest, err)
+		e := s.store.Order().Delete(id)
+		if e != nil {
+			s.error(writer, request, http.StatusBadRequest, e)
 			return
 		}
 
-		s.respond(writer, request, http.StatusOK, res)
+		s.respond(writer, request, http.StatusOK, nil)
 	}
 }
 
